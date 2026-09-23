@@ -1,135 +1,118 @@
-/* global DOLA_DEFAULTS, buildClipPrompts */
+/* global DOLA_DEFAULTS */
 const $ = (sel) => document.querySelector(sel);
 const settingEls = [...document.querySelectorAll('[data-setting]')];
 let settings = { ...DOLA_DEFAULTS };
 
-const STATUS_LABEL = {
-  starting: 'Starting…',
-  running: 'Generating on Dola…',
-  generated: 'All parts generated',
-  merging: 'Stitching…',
-  done: 'Done ✓',
-  error: 'Error',
-  stopped: 'Stopped'
+const ago = (t) => {
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  return new Date(t).toLocaleString();
 };
-const CLIP_LABEL = { queued: 'waiting', sending: 'sending prompt', generating: 'generating…', done: 'done', error: 'error' };
-const ACTIVE = ['starting', 'running', 'generated', 'merging'];
 
 async function loadSettings() {
-  const { settings: saved, draftPrompt } = await chrome.storage.local.get(['settings', 'draftPrompt']);
+  const { settings: saved } = await chrome.storage.local.get('settings');
   settings = { ...DOLA_DEFAULTS, ...(saved || {}) };
   for (const el of settingEls) {
     const v = settings[el.dataset.setting];
     if (el.type === 'checkbox') el.checked = !!v;
     else el.value = v;
   }
-  if (draftPrompt) $('#prompt').value = draftPrompt;
-  syncModeUi();
-}
-
-function readSetting(el) {
-  if (el.type === 'checkbox') return el.checked;
-  if (el.type === 'number') return Number(el.value);
-  return el.value;
 }
 
 async function saveSettings() {
-  for (const el of settingEls) settings[el.dataset.setting] = readSetting(el);
+  for (const el of settingEls) {
+    settings[el.dataset.setting] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+  }
   await chrome.storage.local.set({ settings });
-  syncModeUi();
+  render();
 }
 
-function syncModeUi() {
-  $('#clipSeconds').disabled = settings.mode === 'single';
+async function dolaTab() {
+  const tabs = await chrome.tabs.query({ url: 'https://*.dola.com/*' });
+  return tabs.find((t) => t.active) || tabs[0] || null;
 }
 
-function renderJob(job) {
-  const box = $('#jobBox');
-  if (!job) { box.hidden = true; return; }
-  box.hidden = false;
-  $('#jobStatus').textContent = STATUS_LABEL[job.status] || job.status;
-  $('#jobMessage').textContent = job.message || '';
-  const list = $('#clipList');
-  list.replaceChildren(
-    ...job.clips.map((c) => {
+async function render() {
+  const { history = [], lastSent, lastRewrite } = await chrome.storage.local.get(['history', 'lastSent', 'lastRewrite']);
+
+  const tab = await dolaTab();
+  let status = 'Dola is not open';
+  if (tab) {
+    try {
+      const res = await chrome.tabs.sendMessage(tab.id, { type: 'ping' });
+      status = res && res.armed ? 'Watching for your video…' : 'Ready on Dola';
+    } catch (_) {
+      status = 'Reload the Dola tab to activate';
+    }
+  }
+  $('#tabStatus').textContent = status;
+
+  $('#lastSent').textContent = lastSent ? `Last prompt sent ${ago(lastSent.at)}: "${lastSent.text.slice(0, 70)}${lastSent.text.length > 70 ? '…' : ''}"` : 'Send a prompt on Dola to start.';
+
+  const rw = $('#lastRewrite');
+  if (lastRewrite && lastSent && Math.abs(lastRewrite.at - lastSent.at) < 30000) {
+    rw.className = 'small-line st-done';
+    rw.textContent = `✓ Set to ${settings.seconds}s: ${lastRewrite.changes.join('; ')}`;
+  } else if (lastSent && Date.now() - lastSent.at > 20000 && (settings.forceDuration || settings.appendInstruction)) {
+    rw.className = 'small-line st-error';
+    rw.textContent = 'The last prompt was sent without the 30s change. Check that the Dola tab was reloaded after installing the extension.';
+  } else rw.textContent = '';
+
+  const box = $('#historyBox');
+  box.hidden = !history.length;
+  $('#history').replaceChildren(
+    ...history.slice(0, 8).map((h) => {
       const li = document.createElement('li');
-      li.className = `st-${c.status}`;
-      let text = `Part ${c.part}/${c.total} (${c.seconds}s): ${CLIP_LABEL[c.status] || c.status}`;
-      if (c.status === 'done') text += c.downloaded ? ' · saving to Downloads' : '';
-      if (c.error) text += ` · ${c.error}`;
-      li.textContent = text;
-      if (c.url) {
-        const a = document.createElement('a');
-        a.href = c.url;
-        a.target = '_blank';
-        a.textContent = 'open';
-        a.className = 'open';
-        li.append(a);
-      }
+      const len = h.duration ? `${h.duration.toFixed(1)}s` : 'length unknown';
+      const short = h.duration && h.duration < settings.seconds - 1;
+      li.className = h.ok === false ? 'st-error' : short ? 'st-warn' : 'st-done';
+      li.textContent = `${h.filename.split('/').pop()} · ${len} · ${ago(h.at)}`;
+      if (h.ok === false) li.textContent += ` · failed: ${h.error || 'unknown error'}`;
+      else if (short) li.textContent += ` · shorter than ${settings.seconds}s: Dola/Seedance capped the length`;
       return li;
     })
   );
-  if (job.merged) {
-    const li = document.createElement('li');
-    li.className = 'st-done';
-    li.textContent = `Full video: ${job.merged}`;
-    list.append(li);
+}
+
+settingEls.forEach((el) => el.addEventListener('change', saveSettings));
+
+$('#openDola').addEventListener('click', async () => {
+  const tab = await dolaTab();
+  if (tab) {
+    await chrome.tabs.update(tab.id, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: 'https://www.dola.com/chat/' });
   }
-  // A job that hasn't reported progress for 15 min is considered dead, so Start is usable again.
-  const active = ACTIVE.includes(job.status) && Date.now() - (job.updatedAt || 0) < 15 * 60 * 1000;
-  $('#start').disabled = active;
-  $('#stop').hidden = !['starting', 'running'].includes(job.status);
-}
-
-function renderPreview() {
-  const prompt = $('#prompt').value.trim();
-  const box = $('#previewBox');
-  if (!prompt) { box.hidden = true; return; }
-  const clips = buildClipPrompts(prompt, settings);
-  $('#previewList').replaceChildren(
-    ...clips.map((c) => {
-      const div = document.createElement('div');
-      div.className = 'pv';
-      div.textContent = `— Part ${c.part}/${c.total} · ${c.seconds}s —\n${c.prompt}`;
-      return div;
-    })
-  );
-  box.hidden = false;
-}
-
-settingEls.forEach((el) => el.addEventListener('change', async () => {
-  await saveSettings();
-  if (!$('#previewBox').hidden) renderPreview();
-}));
-
-$('#prompt').addEventListener('input', () => chrome.storage.local.set({ draftPrompt: $('#prompt').value }));
-
-$('#preview').addEventListener('click', () => {
-  if (!$('#previewBox').hidden) { $('#previewBox').hidden = true; return; }
-  renderPreview();
+  window.close();
 });
 
-$('#start').addEventListener('click', async () => {
-  const prompt = $('#prompt').value.trim();
-  if (!prompt) { $('#prompt').focus(); return; }
-  await saveSettings();
-  $('#start').disabled = true;
-  await chrome.runtime.sendMessage({ type: 'startJob', prompt });
+$('#downloadNow').addEventListener('click', async () => {
+  const btn = $('#downloadNow');
+  const tab = await dolaTab();
+  if (!tab) { btn.textContent = 'Open Dola first'; return; }
+  try {
+    const res = await chrome.tabs.sendMessage(tab.id, { type: 'downloadLatest' });
+    btn.textContent = res && res.ok ? 'Downloading ✓' : (res && res.error) || 'Nothing found';
+  } catch (_) {
+    btn.textContent = 'Reload the Dola tab first';
+  }
+  setTimeout(() => { btn.textContent = 'Download latest video now'; }, 3000);
+  render();
 });
-
-$('#stop').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'stopJob' }));
 
 $('#reset').addEventListener('click', async () => {
   await chrome.storage.local.set({ settings: { ...DOLA_DEFAULTS } });
   await loadSettings();
+  render();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.job) renderJob(changes.job.newValue);
+  if (area === 'local' && (changes.history || changes.lastSent || changes.lastRewrite)) render();
 });
 
 (async () => {
   await loadSettings();
-  const { job } = await chrome.storage.local.get('job');
-  renderJob(job);
+  await render();
 })();

@@ -9,6 +9,7 @@
   --accent-text: #ffffff;
   --danger: #dc2626;
   --ok: #059669;
+  --warn: #b45309;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -22,6 +23,7 @@
     --accent-text: #15131f;
     --danger: #f87171;
     --ok: #34d399;
+    --warn: #fbbf24;
   }
 }
 * { box-sizing: border-box; }
@@ -63,12 +65,16 @@ button.primary:hover { filter: brightness(1.08); }
 button.primary:disabled { opacity: .55; cursor: default; }
 button.ghost { background: transparent; }
 section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
-.job-head { display: flex; flex-direction: column; gap: 2px; }
 ol { margin: 8px 0 0; padding-left: 18px; }
 li { margin-bottom: 4px; word-break: break-word; }
 .st-done { color: var(--ok); }
-li a.open { margin-left: 6px; color: var(--accent); }
 .st-error { color: var(--danger); }
-.pv { white-space: pre-wrap; font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 6px; }
+.st-warn { color: var(--warn); }
+.row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.small-line { font-size: 12px; margin-top: 4px; word-break: break-word; }
+.toggle input.inline-num { display: inline-block; width: 56px; margin: 0 4px; padding: 3px 6px; }
+.toggle.wrap { flex-wrap: wrap; }
+.toggle { align-items: flex-start; }
+.toggle > input[type=checkbox] { margin-top: 2px; }
 details { border-top: 1px solid var(--border); padding-top: 8px; }
 summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }

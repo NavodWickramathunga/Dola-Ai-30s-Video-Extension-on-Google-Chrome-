@@ -1,75 +1,62 @@
 # Dola AI 30s Video Maker (Chrome extension)
 
-Type **one prompt**, click **Generate & download**, and the extension:
+Paste your prompt into [Dola AI](https://www.dola.com/chat/) the way you normally do. With this extension installed:
 
-1. Opens your [Dola](https://www.dola.com/chat/) chat (or reuses the one you have open).
-2. Writes Seedance prompts for you and sends them to Dola. By default that is **3 × 10-second parts** that together make one 30-second story with the same characters, location and style.
-3. Waits for each video to finish generating.
-4. **Downloads every part automatically** to `Downloads/DolaAI/`.
-5. **Stitches the parts into one 30-second video** (`…_FULL.mp4`, or `.webm` on older Chrome versions), ready to upload to YouTube Shorts.
+1. **Your video is made as one single 30-second Seedance 2.5 video.** When you press send, the extension changes that request so the video length is set to 30 seconds. It also adds this line to your prompt:
+   > Use Seedance 2.5. Video length: exactly 30 seconds as ONE single continuous 30-second video (do not split it into shorter clips).
+2. **The finished video downloads automatically** to `Downloads/DolaAI/`.
 
-It also has a **Watch mode** that auto-downloads *every* new video that shows up in Dola, including ones you generate by hand.
+You don't type anything into the extension, and it doesn't split videos into parts or stitch them together.
 
-## Install (takes 1 minute)
+## Install
 
-1. Download this repository: **Code → Download ZIP**, then unzip it. You can also use `git clone`.
-2. Open `chrome://extensions` in Google Chrome.
-3. Turn on **Developer mode** (top-right).
-4. Click **Load unpacked** and pick the unzipped folder (the one that contains `manifest.json`).
-5. Pin the extension (puzzle-piece icon → pin **Dola 30s Video**).
-6. Log in at https://www.dola.com/chat/ in the same Chrome profile.
+1. Download this repository: **Code → Download ZIP**, then unzip it.
+2. Open `chrome://extensions` in Chrome and turn on **Developer mode** (top-right).
+3. Click **Load unpacked** and pick the unzipped folder (the one that contains `manifest.json`).
+4. Pin the extension (puzzle-piece icon → pin **Dola 30s Video**).
+5. **Reload any dola.com tab you already have open**, so the extension can start working in it.
 
 ## Use
 
-1. Click the extension icon.
-2. Write your prompt, for example:
-   ```
-   A tiny robot chef cooks ramen in a neon Tokyo alley at night
-   1. The robot flips noodles high into the air, steam everywhere
-   2. Close-up of the robot adding a perfect soft-boiled egg
-   3. A cat customer takes a bite and its eyes light up, camera pulls back to the neon street
-   ```
-   The numbered lines are optional. If you use them, each numbered line becomes one 10s part. If you don't, the extension splits your prompt into an opening, a middle and an ending.
-3. Choose the aspect ratio: **9:16** for Shorts, **16:9** for normal YouTube videos.
-4. (Optional) Click **Preview prompts** to see exactly what will be sent to Dola.
-5. Click **Generate & download**. Keep the Dola tab open. Progress shows in the popup, and you get a desktop notification when the video is ready.
-6. When stitching starts, a tab opens. Keep it open and visible for about 30 seconds while it records the full video.
+1. Open https://www.dola.com/chat/ and paste your full prompt.
+2. Press **Enter** or click Dola's send button.
+3. Wait for Dola to finish. The video saves itself to `Downloads/DolaAI/dola_30s_<date>.mp4` and you get a notification.
 
-### Modes
+The extension popup shows:
+- **Status**: whether it is active on the Dola tab and whether it is waiting for your video.
+- A **✓ Set to 30s** line with what was changed in the last prompt you sent, e.g. `duration: 10 → 30` and `added 30s instruction`.
+- **Downloaded videos**, with each video's real length. If a video is shorter than 30s, it's marked in orange. That means Dola/Seedance capped the length.
+- **Download latest video now**: saves the newest video on the page if the automatic download missed it.
 
-| Mode | What it does |
+### Settings
+
+| Setting | Default |
 |---|---|
-| **30s = chained clips** (default) | Sends N prompts (total length ÷ seconds per clip), then downloads and stitches them. Use this mode because Seedance makes short clips (about 5–15s) per generation. |
-| **One request for full length** | Sends a single prompt asking for the full length. Try it if your Dola plan or skill can make 30s in one go. |
+| Make every Dola video __ seconds long | on, 30 |
+| Add the "single 30s Seedance 2.5 video" instruction to my prompt (the wording can be edited) | on |
+| Auto-download the finished video | on |
+| Download folder / file name prefix | `DolaAI` / `dola` |
+| Keep watching for (min): how long after you send to wait for the video | 20 |
+| Ignore videos shorter than (s): skips small loading or preview animations | 2 |
 
-### Settings (bottom of the popup)
+## Important: the 30s limit is set by Dola, not the extension
 
-- **Skill / model instruction**: the text that starts every prompt (default `Use Seedance 2.5 to`). If you set up a Seedance skill at https://www.dola.com/chat/skills?view=manage&tab=skill, put the way you call that skill here, e.g. `@Seedance`.
-- **Prompt templates**: full control over the text sent. Placeholders: `{skill} {prompt} {seconds} {totalSeconds} {ratio} {resolution} {style} {part} {total} {beat}`.
-- **Download folder / file name prefix**: files are saved as `Downloads/<folder>/<prefix>_<date>_<prompt>_part1of3.mp4`.
-- **Timeout per clip**: how long to wait for each video (default 12 min).
-- **Prompt box / Send button CSS selector**: only needed if Dola changes its page and auto-detect stops working (see Troubleshooting).
+The extension asks Dola for a single 30-second video in two ways: it sets the length in the request and it states the length in your prompt. **Whether you actually get 30 seconds depends on what Dola allows for Seedance 2.5 on your account.** If Dola only allows shorter videos, the server will still return a shorter one, and no browser extension can get around that. The "Downloaded videos" list shows each file's real length, so you can see right away whether you got the full 30 seconds.
 
 ## How it works
 
 | File | Role |
 |---|---|
-| `src/content.js` | Runs on dola.com. Finds the chat box, types and sends each prompt, then watches for the new `<video>` / `.mp4` link and hands it off for download. |
-| `src/page-hook.js` | Runs in the page and watches Dola's network responses (fetch / XHR / streaming) for video URLs, so the finished video is found even before it shows on screen. |
-| `src/background.js` | Starts jobs, finds or opens the Dola tab, saves files with `chrome.downloads`, and sends notifications. |
-| `src/merge.html/js` | Plays the parts back to back into a canvas + audio mix and records one continuous video with `MediaRecorder`. Everything stays in your browser, so nothing is uploaded anywhere. |
-| `src/shared.js` | Settings defaults and the prompt builder that turns one prompt into per-clip prompts. |
+| `src/content.js` | Notices when you send a prompt (Enter or the send button), tells the page hook which prompt it was, then watches for the new video and downloads it. Videos that were already on the page, such as old chats, are never downloaded. |
+| `src/page-hook.js` | Runs inside the Dola page. Finds the one network request that carries your prompt, sets any duration field (`duration`, `video_duration`, `duration_ms`, …) to 30s and adds the instruction to your prompt. It also spots video links in Dola's responses. |
+| `src/background.js` | Saves the file with `chrome.downloads` and shows a notification. |
+| `src/popup.*` | Settings, status and download history. |
 
 ## Troubleshooting
 
-- **"Could not find the Dola chat box"**: open a chat page on dola.com first. If it still fails, right-click the chat box → **Inspect**, copy a selector for it (e.g. `textarea`), and paste it into **Prompt box CSS selector**.
-- **Prompt is typed but not sent**: do the same for the send button → **Send button CSS selector**.
-- **Timed out waiting for the video**: Dola may have asked a question instead of generating. Answer it in the chat, or make the skill prefix more explicit. You can also raise **Timeout per clip**.
-- **A preview or placeholder video got downloaded**: raise **Ignore videos shorter than (s)**.
-- **Downloads have a watermark**: the extension saves the file Dola serves. Watermark rules depend on your Dola plan.
-- The Dola tab can stay in the background, but don't close or reload it while a job is running.
+- **The popup says "sent without the 30s change"**: reload the Dola tab (the extension only starts working after a reload). If it still happens, Dola may send prompts in a way the extension can't see. Please open an issue.
+- **Nothing downloaded**: click **Download latest video now** in the popup, or raise **Keep watching for (min)**.
+- **A preview or placeholder clip got downloaded**: raise **Ignore videos shorter than (s)**.
+- **Watermarks**: the extension saves exactly the file Dola serves.
 
-## Notes
-
-- Use this for your own content, and follow Dola's Terms of Service and usage limits. Every part uses one generation from your Dola account.
-- The `https://*/*` host permission is only used to download the finished video files from Dola's video CDN so they can be stitched locally.
+Use it for your own content, and follow Dola's Terms of Service. Every prompt you send still uses one generation from your Dola account.
