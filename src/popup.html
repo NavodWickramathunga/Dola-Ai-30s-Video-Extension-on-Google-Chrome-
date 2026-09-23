@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dola 30s Video</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="../icons/icon48.png" alt="" width="28" height="28">
+    <div>
+      <h1>Dola 30s Video</h1>
+      <p class="muted">One prompt → Seedance video → auto-download</p>
+    </div>
+  </header>
+
+  <label for="prompt">Your prompt</label>
+  <textarea id="prompt" rows="5" placeholder="A golden retriever surfing a giant wave at sunset, slow motion, spray in the air…&#10;&#10;Tip: write '1. … 2. … 3. …' to control each 10s part."></textarea>
+
+  <div class="grid">
+    <label>Mode
+      <select id="mode" data-setting="mode">
+        <option value="chain">Chained clips (best)</option>
+        <option value="single">Single request</option>
+      </select>
+    </label>
+    <label>Aspect ratio
+      <select id="aspectRatio" data-setting="aspectRatio">
+        <option value="9:16">9:16 (Shorts / Reels / TikTok)</option>
+        <option value="16:9">16:9 (YouTube)</option>
+        <option value="1:1">1:1 (Square)</option>
+        <option value="4:3">4:3</option>
+        <option value="21:9">21:9 (Cinema)</option>
+      </select>
+    </label>
+    <label>Total length (s)
+      <input id="totalSeconds" data-setting="totalSeconds" type="number" min="5" max="120" step="1">
+    </label>
+    <label>Seconds per clip
+      <input id="clipSeconds" data-setting="clipSeconds" type="number" min="3" max="15" step="1">
+    </label>
+  </div>
+
+  <div class="toggles">
+    <label class="toggle"><input type="checkbox" data-setting="autoDownload"> Auto-download each clip</label>
+    <label class="toggle"><input type="checkbox" data-setting="mergeClips"> Stitch clips into one full video</label>
+    <label class="toggle"><input type="checkbox" data-setting="watchMode"> Watch mode: download every new Dola video</label>
+  </div>
+
+  <div class="actions">
+    <button id="start" class="primary">Generate &amp; download</button>
+    <button id="stop" hidden>Stop</button>
+    <button id="preview" class="ghost">Preview prompts</button>
+  </div>
+
+  <section id="jobBox" hidden>
+    <div class="job-head"><strong id="jobStatus"></strong><span id="jobMessage" class="muted"></span></div>
+    <ol id="clipList"></ol>
+  </section>
+
+  <section id="previewBox" hidden>
+    <h2>Prompts that will be sent</h2>
+    <div id="previewList"></div>
+  </section>
+
+  <details>
+    <summary>Settings</summary>
+    <label>Skill / model instruction (prefix)
+      <input data-setting="skillPrefix" type="text" placeholder="Use Seedance 2.5 to">
+    </label>
+    <label>Style
+      <input data-setting="style" type="text">
+    </label>
+    <label>Resolution
+      <select data-setting="resolution">
+        <option>1080p</option><option>720p</option><option>480p</option>
+      </select>
+    </label>
+    <label>Chained-clip prompt template
+      <textarea data-setting="chainTemplate" rows="6"></textarea>
+    </label>
+    <label>Single-request prompt template
+      <textarea data-setting="singleTemplate" rows="3"></textarea>
+    </label>
+    <p class="muted small">Placeholders: {skill} {prompt} {seconds} {totalSeconds} {ratio} {resolution} {style} {part} {total} {beat}</p>
+    <div class="grid">
+      <label>Download folder
+        <input data-setting="downloadFolder" type="text">
+      </label>
+      <label>File name prefix
+        <input data-setting="filePrefix" type="text">
+      </label>
+      <label>Timeout per clip (min)
+        <input data-setting="clipTimeoutMin" type="number" min="1" max="60">
+      </label>
+      <label>Ignore videos shorter than (s)
+        <input data-setting="minVideoSeconds" type="number" min="0" max="15">
+      </label>
+    </div>
+    <label>Dola chat URL
+      <input data-setting="dolaUrl" type="url">
+    </label>
+    <label class="toggle"><input type="checkbox" data-setting="newChatPerJob"> Open a new Dola tab for every job</label>
+    <label>Prompt box CSS selector (only if auto-detect fails)
+      <input data-setting="inputSelector" type="text" placeholder="e.g. textarea[data-testid=chat_input]">
+    </label>
+    <label>Send button CSS selector (only if auto-detect fails)
+      <input data-setting="sendSelector" type="text" placeholder="e.g. button[data-testid=send_button]">
+    </label>
+    <button id="reset" class="ghost">Reset settings</button>
+  </details>
+
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
