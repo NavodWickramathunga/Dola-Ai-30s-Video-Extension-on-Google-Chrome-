@@ -2,7 +2,7 @@
 // - Tells page-hook.js which prompt you just sent, so it can turn that request into a
 //   single 30-second Seedance generation.
 // - After you send a prompt, watches for the finished video and downloads it automatically.
-/* global DOLA_DEFAULTS */
+/* global DOLA_DEFAULTS, withDefaults */
 (() => {
   if (window.__dolaVideoContentLoaded) return;
   window.__dolaVideoContentLoaded = true;
@@ -26,7 +26,7 @@
   }
   async function loadSettings() {
     const { settings: saved } = await chrome.storage.local.get('settings');
-    settings = { ...DOLA_DEFAULTS, ...(saved || {}) };
+    settings = withDefaults(saved);
     pushConfig();
   }
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -63,6 +63,14 @@
     if (!text || !text.trim()) return;
     document.dispatchEvent(new CustomEvent('dola-video-pending', { detail: text }));
     armedUntil = Date.now() + settings.waitMinutes * 60 * 1000;
+    // A new request starts a new set of clips, unless the last set is still being collected
+    // (e.g. you replied "confirm" to Dola's plan while its clips are on the way).
+    if (!session || session.done || Date.now() - session.lastActivity > settings.waitMinutes * 60 * 1000) {
+      session = { id: Date.now(), clips: [], lastActivity: Date.now(), done: false };
+    } else {
+      session.lastActivity = Date.now();
+    }
+    saveSession();
     chrome.storage.local.set({ lastSent: { at: Date.now(), text: text.slice(0, 200) }, netLog: [] });
   }
 
@@ -127,12 +135,16 @@
   }
 
   // ---------- Downloading ----------
-  async function downloadVideo(c) {
+  function makeFilename(suffix) {
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
     const folder = (settings.downloadFolder || 'DolaAI').replace(/[\\:*?"<>|]+/g, ' ').trim();
     const prefix = (settings.filePrefix || 'dola').replace(/[\\/:*?"<>|]+/g, ' ').trim();
-    const filename = `${folder}/${prefix}_${settings.seconds}s_${stamp}.mp4`;
-    const duration = videoDuration(c);
+    return `${folder}/${prefix}_${stamp}${suffix}.mp4`;
+  }
+
+  async function downloadVideo(c, suffix = `_${settings.seconds}s`) {
+    const filename = makeFilename(suffix);
+    const duration = c.duration != null ? c.duration : videoDuration(c);
     let result;
     if (c.url.startsWith('blob:')) {
       // Blob URLs belong to the page, so save them from here.
@@ -155,6 +167,71 @@
     return result;
   }
 
+  // ---------- Collecting Dola's clips and joining them into one video ----------
+  // Dola's Seedance 2.5 tool makes at most 15s per clip, so a 30s request arrives as
+  // several clips. They are collected here and joined into one file once they add up.
+  let session = null; // { id, clips: [{url, duration}], lastActivity, done }
+  const IDLE_JOIN_MS = 5 * 60 * 1000;
+
+  function saveSession() {
+    chrome.storage.local.set({ clipSession: session });
+  }
+
+  // Reads a clip's length by loading only its metadata in a hidden player.
+  function probeDuration(url) {
+    return new Promise((resolve) => {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.muted = true;
+      const done = (d) => { clearTimeout(t); v.removeAttribute('src'); v.load(); resolve(d); };
+      const t = setTimeout(() => done(null), 20000);
+      v.onloadedmetadata = () => {
+        if (Number.isFinite(v.duration)) return done(v.duration);
+        // Streamed files often report Infinity until you seek to the end.
+        v.ondurationchange = () => { if (Number.isFinite(v.duration)) done(v.duration); };
+        v.currentTime = 1e101;
+      };
+      v.onerror = () => done(null);
+      v.src = url;
+    });
+  }
+
+  async function addClip(c) {
+    if (!session) session = { id: Date.now(), clips: [], lastActivity: Date.now(), done: false };
+    let duration = videoDuration(c);
+    if (duration == null) duration = await probeDuration(c.url);
+    session.clips.push({ url: c.url, duration });
+    session.lastActivity = Date.now();
+    session.done = false;
+    LOG('clip', session.clips.length, duration ? `${duration.toFixed(1)}s` : '(length unknown)');
+    if (settings.keepParts) downloadVideo({ ...c, duration }, `_part${session.clips.length}`).catch(() => {});
+    saveSession();
+    await checkSession(false);
+  }
+
+  async function checkSession(force) {
+    if (!session || session.done || !session.clips.length) return;
+    const clips = session.clips;
+    const total = clips.reduce((sum, c) => sum + (c.duration || 0), 0);
+    const target = Number(settings.seconds) || 30;
+    const idle = Date.now() - session.lastActivity > IDLE_JOIN_MS;
+    const complete = total >= target - 1;
+    if (!complete && !force && !idle) return; // more clips are probably on the way
+
+    session.done = true;
+    saveSession();
+    if (clips.length === 1) {
+      await downloadVideo({ url: clips[0].url, duration: clips[0].duration, el: null }, `_${Math.round(clips[0].duration || target)}s`);
+      return;
+    }
+    const seconds = Math.round(total) || target;
+    await chrome.runtime.sendMessage({
+      type: 'joinClips',
+      clips: clips.map((c) => ({ url: c.url, duration: c.duration })),
+      filename: makeFilename(`_${seconds}s_joined`)
+    });
+  }
+
   // ---------- Watcher ----------
   const handled = new Set();
   const pendingSince = new Map(); // key -> first time it looked finished
@@ -174,7 +251,10 @@
       if (c.source === 'network' && domKeys.size && [...domKeys].some((dk) => !handled.has(dk))) continue;
       handled.add(k);
       pendingSince.delete(k);
-      try { await downloadVideo(c); } catch (e) { LOG('download failed', e); }
+      try {
+        if (settings.joinClips) await addClip(c);
+        else await downloadVideo(c);
+      } catch (e) { LOG('download failed', e); }
     }
   }
 
@@ -188,6 +268,7 @@
       if (Date.now() > armedUntil) for (const k of collectCandidates().keys()) handled.add(k);
     }, 3000);
     setInterval(() => tick().catch((e) => LOG('watch error', e)), 2500);
+    setInterval(() => checkSession(false).catch((e) => LOG('join error', e)), 15000);
   }
   start();
 
@@ -195,6 +276,19 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'ping') {
       sendResponse({ ok: true, armed: Date.now() < armedUntil });
+    } else if (msg.type === 'joinNow') {
+      if (!session || !session.clips.length) { sendResponse({ ok: false, error: 'No clips collected yet.' }); return false; }
+      session.done = false;
+      checkSession(true).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: e.message }));
+      return true;
+    } else if (msg.type === 'fetchBlobAsDataUrl') {
+      // The joiner can't read the page's blob: videos directly, so hand them over as data.
+      fetch(msg.url)
+        .then((r) => r.blob())
+        .then((b) => new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); }))
+        .then((dataUrl) => sendResponse({ ok: true, dataUrl }))
+        .catch((e) => sendResponse({ ok: false, error: e.message }));
+      return true;
     } else if (msg.type === 'downloadLatest') {
       // Manual fallback: save the newest finished video on the page.
       const list = [...collectCandidates().values()].filter((c) => c.source !== 'network' && looksFinished(c));

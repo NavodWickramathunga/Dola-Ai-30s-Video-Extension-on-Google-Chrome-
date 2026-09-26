@@ -10,7 +10,7 @@
     <img src="../icons/icon48.png" alt="" width="28" height="28">
     <div>
       <h1>Dola 30s Video</h1>
-      <p class="muted">Paste your prompt in Dola as usual. You get one 30s Seedance 2.5 video, downloaded automatically.</p>
+      <p class="muted">Paste your prompt in Dola as usual. You get one 30s video in your Downloads folder.</p>
     </div>
   </header>
 
@@ -19,16 +19,19 @@
       <input class="inline-num" type="number" min="5" max="60" step="1" data-setting="seconds"> seconds long</span></label>
     <label class="toggle"><input type="checkbox" data-setting="appendInstruction"> <span>Add the "single 30s Seedance 2.5 video" instruction to my prompt</span></label>
     <label class="toggle"><input type="checkbox" data-setting="autoDownload"> <span>Auto-download the finished video</span></label>
+    <label class="toggle"><input type="checkbox" data-setting="joinClips"> <span>Join Dola's clips into one video (Dola makes max 15s per clip)</span></label>
   </div>
 
   <section>
     <div class="row"><strong>Status</strong><span id="tabStatus" class="muted"></span></div>
     <p id="lastSent" class="muted small-line"></p>
     <p id="lastRewrite" class="small-line"></p>
+    <p id="clipStatus" class="small-line"></p>
   </section>
 
   <div class="actions">
     <button id="openDola" class="primary">Open Dola</button>
+    <button id="joinNow" hidden>Join clips now</button>
     <button id="downloadNow">Download latest video now</button>
   </div>
 
@@ -63,6 +66,7 @@
         <input data-setting="minVideoSeconds" type="number" min="0" max="30">
       </label>
     </div>
+    <label class="toggle"><input type="checkbox" data-setting="keepParts"> <span>Also save the separate clips</span></label>
     <button id="reset" class="ghost">Reset settings</button>
   </details>
 

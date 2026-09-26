@@ -1,4 +1,4 @@
-/* global DOLA_DEFAULTS */
+/* global DOLA_DEFAULTS, withDefaults */
 const $ = (sel) => document.querySelector(sel);
 const settingEls = [...document.querySelectorAll('[data-setting]')];
 let settings = { ...DOLA_DEFAULTS };
@@ -13,7 +13,7 @@ const ago = (t) => {
 
 async function loadSettings() {
   const { settings: saved } = await chrome.storage.local.get('settings');
-  settings = { ...DOLA_DEFAULTS, ...(saved || {}) };
+  settings = withDefaults(saved);
   for (const el of settingEls) {
     const v = settings[el.dataset.setting];
     if (el.type === 'checkbox') el.checked = !!v;
@@ -35,7 +35,7 @@ async function dolaTab() {
 }
 
 async function render() {
-  const { history = [], lastSent, lastRewrite } = await chrome.storage.local.get(['history', 'lastSent', 'lastRewrite']);
+  const { history = [], lastSent, lastRewrite, clipSession } = await chrome.storage.local.get(['history', 'lastSent', 'lastRewrite', 'clipSession']);
 
   const tab = await dolaTab();
   let status = 'Dola is not open';
@@ -60,6 +60,20 @@ async function render() {
     rw.textContent = 'The last prompt was sent without the 30s change. Check that the Dola tab was reloaded after installing the extension.';
   } else rw.textContent = '';
 
+  const cs = $('#clipStatus');
+  const clips = (clipSession && clipSession.clips) || [];
+  if (settings.joinClips && clips.length) {
+    const total = clips.reduce((sum, c) => sum + (c.duration || 0), 0);
+    cs.className = 'small-line ' + (clipSession.done ? 'st-done' : '');
+    cs.textContent = clipSession.done
+      ? `✓ ${clips.length} clip(s), ${Math.round(total)}s in total: sent for joining.`
+      : `Clips received: ${clips.length} (${Math.round(total)}s of ${settings.seconds}s). Waiting for the rest…`;
+    $('#joinNow').hidden = clipSession.done || clips.length < 1;
+  } else {
+    cs.textContent = '';
+    $('#joinNow').hidden = true;
+  }
+
   const { netLog = [] } = await chrome.storage.local.get('netLog');
   $('#netLog').replaceChildren(
     ...(netLog.length ? netLog : [null]).map((n) => {
@@ -82,7 +96,7 @@ async function render() {
       const len = h.duration ? `${h.duration.toFixed(1)}s` : 'length unknown';
       const short = h.duration && h.duration < settings.seconds - 1;
       li.className = h.ok === false ? 'st-error' : short ? 'st-warn' : 'st-done';
-      li.textContent = `${h.filename.split('/').pop()} · ${len} · ${ago(h.at)}`;
+      li.textContent = `${h.filename.split('/').pop()} · ${len}${h.joined ? ` · ${h.joined} clips joined` : ''} · ${ago(h.at)}`;
       if (h.ok === false) li.textContent += ` · failed: ${h.error || 'unknown error'}`;
       else if (short) li.textContent += ` · shorter than ${settings.seconds}s: Dola/Seedance capped the length`;
       return li;
@@ -117,6 +131,17 @@ $('#downloadNow').addEventListener('click', async () => {
   render();
 });
 
+$('#joinNow').addEventListener('click', async () => {
+  const tab = await dolaTab();
+  if (!tab) return;
+  try {
+    const res = await chrome.tabs.sendMessage(tab.id, { type: 'joinNow' });
+    if (!res || !res.ok) $('#joinNow').textContent = (res && res.error) || 'Could not join';
+  } catch (_) {
+    $('#joinNow').textContent = 'Reload the Dola tab first';
+  }
+});
+
 $('#copyNet').addEventListener('click', async () => {
   await navigator.clipboard.writeText(JSON.stringify(netLogCache, null, 1));
   $('#copyNet').textContent = 'Copied ✓';
@@ -130,7 +155,7 @@ $('#reset').addEventListener('click', async () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.history || changes.lastSent || changes.lastRewrite || changes.netLog)) render();
+  if (area === 'local' && (changes.history || changes.lastSent || changes.lastRewrite || changes.netLog || changes.clipSession)) render();
 });
 
 (async () => {

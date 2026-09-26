@@ -79,7 +79,7 @@
           !val.includes(config.instructionText)
         ) {
           obj[key] = `${val}\n\n${config.instructionText}`;
-          changes.push(`added 30s instruction to "${key}"`);
+          changes.push(`added the ${config.seconds}s instruction to "${key}"`);
         }
       } else if (val && typeof val === 'object') {
         rewriteObject(val, needle, changes, depth + 1);

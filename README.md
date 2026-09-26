@@ -1,12 +1,13 @@
 # Dola AI 30s Video Maker (Chrome extension)
 
-Paste your prompt into [Dola AI](https://www.dola.com/chat/) the way you normally do. With this extension installed:
+Paste your prompt into [Dola AI](https://www.dola.com/chat/) the way you normally do. With this extension you end up with **one 30-second video file** in `Downloads/DolaAI/`.
 
-1. **Your video is made as one single 30-second Seedance 2.5 video.** When you press send, the extension changes that request so the video length is set to 30 seconds. It also adds this line to your prompt:
-   > Use Seedance 2.5. Video length: exactly 30 seconds as ONE single continuous 30-second video (do not split it into shorter clips).
-2. **The finished video downloads automatically** to `Downloads/DolaAI/`.
+**Why it joins clips:** Seedance 2.5 on Dola makes at most **15 seconds per clip**. That limit is on Dola's servers and no browser extension can change it. So the extension:
 
-You don't type anything into the extension, and it doesn't split videos into parts or stitch them together.
+1. **Asks Dola for 30 seconds.** When you press send, it adds an instruction to your prompt: 30 seconds in total, made as consecutive 15-second clips where each clip starts on the last frame of the one before, generated straight away without asking you to confirm the plan. If Dola's request has a length field, that is set to 30 as well.
+2. **Collects the clips** as Dola finishes them.
+3. **Joins them into one 30-second MP4** once they add up to 30 seconds. A tab opens for about 30 seconds while the clips are joined, then closes by itself.
+4. If Dola ever makes a full 30-second clip on its own, that single file is saved as it is.
 
 ## Install
 
@@ -20,13 +21,16 @@ You don't type anything into the extension, and it doesn't split videos into par
 
 1. Open https://www.dola.com/chat/ and paste your full prompt.
 2. Press **Enter** or click Dola's send button.
-3. Wait for Dola to finish. The video saves itself to `Downloads/DolaAI/dola_30s_<date>.mp4` and you get a notification.
+3. Wait for Dola to finish all clips. A "Joining your clips" tab opens for about 30 seconds, then your video is saved as `Downloads/DolaAI/dola_<date>_30s_joined.mp4` and you get a notification.
 
 The extension popup shows:
 - **Status**: whether it is active on the Dola tab and whether it is waiting for your video.
 - A **✓ Set to 30s** line with what was changed in the last prompt you sent, e.g. `duration: 10 → 30` and `added 30s instruction`.
 - **Downloaded videos**, with each video's real length. If a video is shorter than 30s, it's marked in orange. That means Dola/Seedance capped the length.
+- **Clips received**: how many clips have arrived and how many seconds they add up to.
+- **Join clips now**: joins whatever has arrived so far, if you don't want to wait. On its own, the extension joins as soon as the clips reach 30 seconds, or 5 minutes after the last clip arrived.
 - **Download latest video now**: saves the newest video on the page if the automatic download missed it.
+- **What Dola sent (for troubleshooting)**: shows the requests the page made right after your prompt (addresses, sizes and field names only), so problems can be diagnosed.
 
 ### Settings
 
@@ -35,13 +39,17 @@ The extension popup shows:
 | Make every Dola video __ seconds long | on, 30 |
 | Add the "single 30s Seedance 2.5 video" instruction to my prompt (the wording can be edited) | on |
 | Auto-download the finished video | on |
+| Join Dola's clips into one video | on |
+| Also save the separate clips | off |
 | Download folder / file name prefix | `DolaAI` / `dola` |
 | Keep watching for (min): how long after you send to wait for the video | 20 |
 | Ignore videos shorter than (s): skips small loading or preview animations | 2 |
 
-## Important: the 30s limit is set by Dola, not the extension
+## Good to know
 
-The extension asks Dola for a single 30-second video in two ways: it sets the length in the request and it states the length in your prompt. **Whether you actually get 30 seconds depends on what Dola allows for Seedance 2.5 on your account.** If Dola only allows shorter videos, the server will still return a shorter one, and no browser extension can get around that. The "Downloaded videos" list shows each file's real length, so you can see right away whether you got the full 30 seconds.
+- Because Dola generates the clips separately, there can be a small visible change where clip 1 ends and clip 2 starts. The added instruction asks Dola to start each clip on the last frame of the previous one to keep that change as small as possible.
+- The joined video is recorded again at high quality (12 Mbps). On Chrome 126 or newer it is saved as MP4, and on older Chrome as WebM. YouTube accepts both.
+- The extension needs permission to download from any website, because Dola's videos are stored on a separate video server.
 
 ## How it works
 
@@ -49,7 +57,8 @@ The extension asks Dola for a single 30-second video in two ways: it sets the le
 |---|---|
 | `src/content.js` | Notices when you send a prompt (Enter or the send button), tells the page hook which prompt it was, then watches for the new video and downloads it. Videos that were already on the page, such as old chats, are never downloaded. |
 | `src/page-hook.js` | Runs inside the Dola page. Finds the one network request that carries your prompt, sets any duration field (`duration`, `video_duration`, `duration_ms`, …) to 30s and adds the instruction to your prompt. It also spots video links in Dola's responses. |
-| `src/background.js` | Saves the file with `chrome.downloads` and shows a notification. |
+| `src/background.js` | Saves files with `chrome.downloads`, opens the joiner and shows notifications. |
+| `src/join.html/js` | Plays the clips back to back into a canvas plus an audio mix and records one continuous video with `MediaRecorder`. Everything happens in your browser, so nothing is uploaded. |
 | `src/popup.*` | Settings, status and download history. |
 
 ## Troubleshooting
