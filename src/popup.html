@@ -15,9 +15,9 @@
   </header>
 
   <div class="toggles">
-    <label class="toggle"><input type="checkbox" data-setting="forceDuration"> <span>Make every Dola video
-      <input class="inline-num" type="number" min="5" max="60" step="1" data-setting="seconds"> seconds long</span></label>
-    <label class="toggle"><input type="checkbox" data-setting="appendInstruction"> <span>Add the "single 30s Seedance 2.5 video" instruction to my prompt</span></label>
+    <label class="toggle"><span>Final video length
+      <input class="inline-num" type="number" min="5" max="60" step="1" data-setting="seconds"> seconds</span></label>
+    <label class="toggle"><input type="checkbox" data-setting="appendInstruction"> <span>Add the length instruction to my message (you'll see it in the chat)</span></label>
     <label class="toggle"><input type="checkbox" data-setting="autoDownload"> <span>Auto-download the finished video</span></label>
     <label class="toggle"><input type="checkbox" data-setting="joinClips"> <span>Join Dola's clips into one video (Dola makes max 15s per clip)</span></label>
   </div>
@@ -35,12 +35,7 @@
     <button id="downloadNow">Download latest video now</button>
   </div>
 
-  <details id="netBox">
-    <summary>What Dola sent (for troubleshooting)</summary>
-    <p class="muted small-line">Requests the page made right after your last prompt. Only addresses, sizes and field names are shown, never your text.</p>
-    <ol id="netLog"></ol>
-    <button id="copyNet" class="ghost">Copy details</button>
-  </details>
+  <p class="muted small-line safe">🛡️ Safe mode: this extension never changes Dola's code or requests. It only types, reads and downloads, like you would.</p>
 
   <section id="historyBox" hidden>
     <h2>Downloaded videos</h2>

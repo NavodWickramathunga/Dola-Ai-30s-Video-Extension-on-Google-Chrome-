@@ -2,8 +2,7 @@
 /* exported DOLA_DEFAULTS, withDefaults */
 
 var DOLA_DEFAULTS = {
-  // What to ask Dola for
-  forceDuration: true,
+  // What to ask Dola for (added as visible text to your message; Dola's requests are never modified)
   seconds: 30,
   appendInstruction: true,
   // Dola's Seedance 2.5 tool makes at most 15s per clip, so ask for consecutive clips that

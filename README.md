@@ -4,7 +4,7 @@ Paste your prompt into [Dola AI](https://www.dola.com/chat/) the way you normall
 
 **Why it joins clips:** Seedance 2.5 on Dola makes at most **15 seconds per clip**. That limit is on Dola's servers and no browser extension can change it. So the extension:
 
-1. **Asks Dola for 30 seconds.** When you press send, it adds an instruction to your prompt: 30 seconds in total, made as consecutive 15-second clips where each clip starts on the last frame of the one before, generated straight away without asking you to confirm the plan. If Dola's request has a length field, that is set to 30 as well.
+1. **Asks Dola for 30 seconds.** When you press send, it adds an instruction to the end of your message, as visible text just like you typed it: 30 seconds in total, made as consecutive 15-second clips where each clip starts on the last frame of the one before, generated straight away without asking you to confirm the plan. Short replies such as "confirm A" are left unchanged.
 2. **Collects the clips** as Dola finishes them.
 3. **Joins them into one 30-second MP4** once they add up to 30 seconds. A tab opens for about 30 seconds while the clips are joined, then closes by itself.
 4. If Dola ever makes a full 30-second clip on its own, that single file is saved as it is.
@@ -30,13 +30,12 @@ The extension popup shows:
 - **Clips received**: how many clips have arrived and how many seconds they add up to.
 - **Join clips now**: joins whatever has arrived so far, if you don't want to wait. On its own, the extension joins as soon as the clips reach 30 seconds, or 5 minutes after the last clip arrived.
 - **Download latest video now**: saves the newest video on the page if the automatic download missed it.
-- **What Dola sent (for troubleshooting)**: shows the requests the page made right after your prompt (addresses, sizes and field names only), so problems can be diagnosed.
 
 ### Settings
 
 | Setting | Default |
 |---|---|
-| Make every Dola video __ seconds long | on, 30 |
+| Final video length | 30 seconds |
 | Add the "single 30s Seedance 2.5 video" instruction to my prompt (the wording can be edited) | on |
 | Auto-download the finished video | on |
 | Join Dola's clips into one video | on |
@@ -44,6 +43,17 @@ The extension popup shows:
 | Download folder / file name prefix | `DolaAI` / `dola` |
 | Keep watching for (min): how long after you send to wait for the video | 20 |
 | Ignore videos shorter than (s): skips small loading or preview animations | 2 |
+
+## 🛡️ Safe mode (lower risk for your Dola account)
+
+Version 3 works **only through normal, visible actions**:
+
+- It **never changes Dola's own code or network requests**, never hides errors or logouts, and never changes limits or settings behind the scenes.
+- It never sends prompts for you. You still press send yourself.
+- It uses a single account only: no cookies, no account switching, and no attempts to get around daily limits or safety filters.
+- What it does: adds visible text to your message, watches the page for finished videos, downloads them, and joins them on your own computer.
+
+No tool can promise that Dola will never restrict an account, because that is Dola's decision under its terms. But this is the same as what you could do by hand, which keeps the risk as low as possible.
 
 ## Good to know
 
@@ -56,7 +66,6 @@ The extension popup shows:
 | File | Role |
 |---|---|
 | `src/content.js` | Notices when you send a prompt (Enter or the send button), tells the page hook which prompt it was, then watches for the new video and downloads it. Videos that were already on the page, such as old chats, are never downloaded. |
-| `src/page-hook.js` | Runs inside the Dola page. Finds the one network request that carries your prompt, sets any duration field (`duration`, `video_duration`, `duration_ms`, …) to 30s and adds the instruction to your prompt. It also spots video links in Dola's responses. |
 | `src/background.js` | Saves files with `chrome.downloads`, opens the joiner and shows notifications. |
 | `src/join.html/js` | Plays the clips back to back into a canvas plus an audio mix and records one continuous video with `MediaRecorder`. Everything happens in your browser, so nothing is uploaded. |
 | `src/popup.*` | Settings, status and download history. |

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Dola AI 30s Video Maker",
   "short_name": "Dola 30s Video",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Paste your prompt in Dola AI as usual. Get one 30-second Seedance 2.5 video (Dola’s clips joined automatically), downloaded to your computer.",
   "icons": {
     "16": "icons/icon16.png",
@@ -32,16 +32,6 @@
     "https://*/*"
   ],
   "content_scripts": [
-    {
-      "matches": [
-        "https://*.dola.com/*"
-      ],
-      "js": [
-        "src/page-hook.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
     {
       "matches": [
         "https://*.dola.com/*"

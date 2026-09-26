@@ -78,5 +78,4 @@ li { margin-bottom: 4px; word-break: break-word; }
 .toggle > input[type=checkbox] { margin-top: 2px; }
 details { border-top: 1px solid var(--border); padding-top: 8px; }
 summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
-#netBox { margin-bottom: 10px; }
-#netLog li { font-size: 11px; }
+.safe { margin: 0 0 10px; }

@@ -1,7 +1,7 @@
 // Content script on dola.com.
-// - Tells page-hook.js which prompt you just sent, so it can turn that request into a
-//   single 30-second Seedance generation.
-// - After you send a prompt, watches for the finished video and downloads it automatically.
+// Safe by design: it never changes Dola's own code or network requests. It only does what
+// you could do by hand: adds the 30s instruction as visible text in your message, watches
+// the page for finished videos, and downloads/joins them.
 /* global DOLA_DEFAULTS, withDefaults */
 (() => {
   if (window.__dolaVideoContentLoaded) return;
@@ -11,45 +11,16 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let settings = { ...DOLA_DEFAULTS };
 
-  // ---------- Settings → page hook ----------
-  function pushConfig() {
-    window.postMessage({
-      source: 'dola-video-content',
-      type: 'config',
-      config: {
-        forceDuration: settings.forceDuration,
-        seconds: Number(settings.seconds) || 30,
-        appendInstruction: settings.appendInstruction,
-        instructionText: String(settings.instruction || '').replace(/\{seconds\}/g, Number(settings.seconds) || 30)
-      }
-    }, '*');
-  }
   async function loadSettings() {
     const { settings: saved } = await chrome.storage.local.get('settings');
     settings = withDefaults(saved);
-    pushConfig();
   }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.settings) loadSettings();
   });
 
-  // ---------- Messages from page-hook.js ----------
-  const hookedUrls = new Map(); // url -> time seen
-  window.addEventListener('message', (e) => {
-    if (e.source !== window || !e.data || e.data.source !== 'dola-video-hook') return;
-    const d = e.data;
-    if (d.type === 'hook-ready') pushConfig();
-    else if (d.type === 'video-url' && !hookedUrls.has(d.url)) hookedUrls.set(d.url, Date.now());
-    else if (d.type === 'net-log') {
-      chrome.storage.local.get('netLog').then(({ netLog = [] }) => {
-        netLog.push(d.entry);
-        chrome.storage.local.set({ netLog: netLog.slice(-25) });
-      });
-    } else if (d.type === 'rewrote') {
-      LOG('made this prompt a single', settings.seconds, 's video:', d.changes);
-      chrome.storage.local.set({ lastRewrite: { at: Date.now(), changes: d.changes } });
-    }
-  });
+  const instructionText = () =>
+    String(settings.instruction || '').replace(/\{seconds\}/g, Number(settings.seconds) || 30).trim();
 
   // ---------- Detect when you send a prompt ----------
   let lastComposerText = '';
@@ -57,11 +28,17 @@
 
   const isEditable = (el) =>
     el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text') || el.isContentEditable);
+  const editableRoot = (el) => {
+    if (!el) return null;
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el;
+    let root = el;
+    while (root.parentElement && root.parentElement.isContentEditable) root = root.parentElement;
+    return root;
+  };
   const readText = (el) => (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' ? el.value : el.innerText) || '';
 
   function onPromptSent(text) {
     if (!text || !text.trim()) return;
-    document.dispatchEvent(new CustomEvent('dola-video-pending', { detail: text }));
     armedUntil = Date.now() + settings.waitMinutes * 60 * 1000;
     // A new request starts a new set of clips, unless the last set is still being collected
     // (e.g. you replied "confirm" to Dola's plan while its clips are on the way).
@@ -71,26 +48,98 @@
       session.lastActivity = Date.now();
     }
     saveSession();
-    chrome.storage.local.set({ lastSent: { at: Date.now(), text: text.slice(0, 200) }, netLog: [] });
+    chrome.storage.local.set({ lastSent: { at: Date.now(), text: text.slice(0, 200) } });
+  }
+
+  // Adds the instruction to the end of your message as normal typed text (only for real
+  // prompts, not for short replies like "confirm A", and never twice).
+  function appendInstruction(el) {
+    if (!settings.appendInstruction) return false;
+    const extra = instructionText();
+    const current = readText(el);
+    if (!extra || !current.trim() || current.includes(extra.slice(0, 40))) return false;
+    if (current.trim().length < 40) return false; // short reply, not a video prompt
+    const addition = `\n\n${extra}`;
+    el.focus();
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, current + addition);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('insertText', false, addition);
+    }
+    const added = readText(el).includes(extra.slice(0, 40));
+    if (added) {
+      lastComposerText = readText(el);
+      chrome.storage.local.set({ lastRewrite: { at: Date.now(), changes: [`added the ${settings.seconds}s instruction to your message`] } });
+    }
+    return added;
+  }
+
+  const SEND_RE = /send|submit|发送/i;
+  const looksLikeSend = (btn) =>
+    btn.type === 'submit' ||
+    SEND_RE.test([btn.getAttribute('aria-label'), btn.getAttribute('data-testid'), btn.getAttribute('title'), btn.id,
+      typeof btn.className === 'string' ? btn.className : ''].filter(Boolean).join(' '));
+
+  function findSendButton(el) {
+    let node = el;
+    for (let depth = 0; depth < 7 && node; depth++, node = node.parentElement) {
+      const btns = [...node.querySelectorAll('button, [role="button"]')].filter((b) => b.offsetParent !== null && !b.disabled);
+      const labelled = btns.find(looksLikeSend);
+      if (labelled) return labelled;
+    }
+    return null;
   }
 
   document.addEventListener('input', (e) => {
     const el = e.target;
-    if (isEditable(el)) lastComposerText = readText(el);
+    if (isEditable(el)) lastComposerText = readText(editableRoot(el));
   }, true);
 
+  let resending = false;
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
-    const el = e.target;
-    if (isEditable(el)) onPromptSent(readText(el) || lastComposerText);
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || resending) return;
+    if (!isEditable(e.target)) return;
+    const el = editableRoot(e.target);
+    const text = readText(el) || lastComposerText;
+    // Hold this Enter, add the instruction, let the page update, then press Enter again.
+    if (settings.appendInstruction && text.trim().length >= 40 && !text.includes(instructionText().slice(0, 40))) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (appendInstruction(el)) {
+        setTimeout(() => {
+          resending = true;
+          const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+          el.dispatchEvent(new KeyboardEvent('keydown', opts));
+          el.dispatchEvent(new KeyboardEvent('keyup', opts));
+          resending = false;
+          // If the page ignored the replayed Enter, click its send button instead.
+          setTimeout(() => {
+            if (readText(el).trim()) { const b = findSendButton(el); if (b) b.click(); }
+          }, 700);
+        }, 150);
+        onPromptSent(readText(el));
+        return;
+      }
+    }
+    onPromptSent(text);
   }, true);
 
-  // Clicking the send button (any button while the composer has text)
+  // Clicking the send button: add the instruction on press-down, before the click sends.
   document.addEventListener('pointerdown', (e) => {
     const btn = e.target.closest && e.target.closest('button, [role="button"]');
     if (!btn || !lastComposerText.trim()) return;
     const active = document.activeElement;
-    const text = isEditable(active) ? readText(active) : lastComposerText;
+    const el = isEditable(active) ? editableRoot(active) : null;
+    if (el && looksLikeSend(btn)) appendInstruction(el);
+    const text = el ? readText(el) : lastComposerText;
     if (text.trim()) onPromptSent(text);
   }, true);
 
@@ -121,9 +170,6 @@
     document.querySelectorAll('a[href]').forEach((a) => {
       if (DOWNLOADABLE_RE.test(a.href) && !found.has(keyOf(a.href))) found.set(keyOf(a.href), { url: a.href, el: a, source: 'link' });
     });
-    for (const [url] of hookedUrls) {
-      if (DOWNLOADABLE_RE.test(url) && !found.has(keyOf(url))) found.set(keyOf(url), { url, el: null, source: 'network' });
-    }
     return found;
   }
 

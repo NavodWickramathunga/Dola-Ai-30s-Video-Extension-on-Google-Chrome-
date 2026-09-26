@@ -2,7 +2,6 @@
 const $ = (sel) => document.querySelector(sel);
 const settingEls = [...document.querySelectorAll('[data-setting]')];
 let settings = { ...DOLA_DEFAULTS };
-let netLogCache = [];
 
 const ago = (t) => {
   const s = Math.round((Date.now() - t) / 1000);
@@ -54,10 +53,7 @@ async function render() {
   const rw = $('#lastRewrite');
   if (lastRewrite && lastSent && Math.abs(lastRewrite.at - lastSent.at) < 30000) {
     rw.className = 'small-line st-done';
-    rw.textContent = `✓ Set to ${settings.seconds}s: ${lastRewrite.changes.join('; ')}`;
-  } else if (lastSent && Date.now() - lastSent.at > 20000 && (settings.forceDuration || settings.appendInstruction)) {
-    rw.className = 'small-line st-error';
-    rw.textContent = 'The last prompt was sent without the 30s change. Check that the Dola tab was reloaded after installing the extension.';
+    rw.textContent = `✓ ${lastRewrite.changes.join('; ')}`;
   } else rw.textContent = '';
 
   const cs = $('#clipStatus');
@@ -74,19 +70,6 @@ async function render() {
     $('#joinNow').hidden = true;
   }
 
-  const { netLog = [] } = await chrome.storage.local.get('netLog');
-  $('#netLog').replaceChildren(
-    ...(netLog.length ? netLog : [null]).map((n) => {
-      const li = document.createElement('li');
-      if (!n) { li.textContent = 'Nothing recorded yet. Send a prompt on Dola, then open this again.'; return li; }
-      li.className = n.changed ? 'st-done' : n.hasPrompt ? 'st-warn' : '';
-      li.textContent = `${n.transport} ${n.method} ${n.path} · ${n.kind} ${n.size}b` +
-        (n.hasPrompt ? ' · contains your prompt' : '') + (n.changed ? ' · changed to 30s' : '') +
-        (n.keys && n.keys.length ? ` · fields: ${n.keys.join(', ')}` : '');
-      return li;
-    })
-  );
-  netLogCache = netLog;
 
   const box = $('#historyBox');
   box.hidden = !history.length;
@@ -142,12 +125,6 @@ $('#joinNow').addEventListener('click', async () => {
   }
 });
 
-$('#copyNet').addEventListener('click', async () => {
-  await navigator.clipboard.writeText(JSON.stringify(netLogCache, null, 1));
-  $('#copyNet').textContent = 'Copied ✓';
-  setTimeout(() => { $('#copyNet').textContent = 'Copy details'; }, 2000);
-});
-
 $('#reset').addEventListener('click', async () => {
   await chrome.storage.local.set({ settings: { ...DOLA_DEFAULTS } });
   await loadSettings();
@@ -155,7 +132,7 @@ $('#reset').addEventListener('click', async () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.history || changes.lastSent || changes.lastRewrite || changes.netLog || changes.clipSession)) render();
+  if (area === 'local' && (changes.history || changes.lastSent || changes.lastRewrite || changes.clipSession)) render();
 });
 
 (async () => {
