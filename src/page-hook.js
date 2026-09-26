@@ -87,22 +87,92 @@
     }
   }
 
+  // ---------- Diagnostics: what did the page send right after you pressed send? ----------
+  // Only request metadata is recorded (address path, method, body type/size, key names),
+  // never the values, so the popup can show why a prompt was or wasn't changed.
+  function keyPaths(obj, prefix = '', out = [], depth = 0) {
+    if (!obj || typeof obj !== 'object' || depth > 6 || out.length > 60) return out;
+    for (const k of Object.keys(obj)) {
+      const path = prefix ? `${prefix}.${k}` : k;
+      out.push(path);
+      const v = obj[k];
+      if (v && typeof v === 'object') keyPaths(v, Array.isArray(obj) ? prefix : path, out, depth + 1);
+      else if (typeof v === 'string' && /^\s*[{[]/.test(v)) {
+        try { keyPaths(JSON.parse(v), path, out, depth + 1); } catch (_) { /* not JSON */ }
+      }
+    }
+    return out;
+  }
+  function logRequest(transport, method, url, kind, text, changed) {
+    if (!pending || Date.now() - pending.at > PENDING_WINDOW_MS) return;
+    let path = String(url || '');
+    try { const u = new URL(path, location.href); path = u.host + u.pathname; } catch (_) { /* keep */ }
+    const needle = promptKey(pending.text);
+    const hasPrompt = !!(text && needle.length >= 4 && norm(text).includes(needle));
+    let keys = [];
+    if (hasPrompt) {
+      try { keys = keyPaths(JSON.parse(text.trim())).slice(0, 60); } catch (_) { /* not JSON */ }
+    }
+    post({ type: 'net-log', entry: { at: Date.now(), transport, method, path, kind, size: text ? text.length : 0, hasPrompt, changed: !!changed, keys } });
+  }
+
+  function bodyKind(body) {
+    if (body == null) return 'none';
+    if (typeof body === 'string') return 'text';
+    if (body instanceof URLSearchParams) return 'form';
+    if (body instanceof FormData) return 'multipart';
+    if (body instanceof Blob) return 'blob';
+    if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return 'binary';
+    if (body instanceof ReadableStream) return 'stream';
+    return typeof body;
+  }
+  // Best-effort, synchronous conversion of a request body to text.
+  function bodyText(body) {
+    try {
+      if (typeof body === 'string') return body;
+      if (body instanceof URLSearchParams) return body.toString();
+      if (body instanceof ArrayBuffer) return new TextDecoder().decode(body);
+      if (ArrayBuffer.isView(body)) return new TextDecoder().decode(body);
+      if (body instanceof FormData) {
+        return [...body.entries()].map(([k, v]) => (typeof v === 'string' ? `${k}=${v}` : k)).join('\n');
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
   // Returns the new body string, or null to leave the request untouched.
-  function maybeRewriteBody(body, url) {
-    if (typeof body !== 'string' || !pending || Date.now() - pending.at > PENDING_WINDOW_MS) return null;
+  function maybeRewriteText(text) {
+    if (typeof text !== 'string' || !pending || Date.now() - pending.at > PENDING_WINDOW_MS) return null;
     if (!config.forceDuration && !config.appendInstruction) return null;
-    const t = body.trim();
-    if (!(t.startsWith('{') || t.startsWith('['))) return null;
     const needle = promptKey(pending.text);
     // Only touch the request that actually carries the prompt you just sent.
-    if (needle.length < 4 || !norm(body).includes(needle)) return null;
-    let json;
-    try { json = JSON.parse(t); } catch (_) { return null; }
+    if (needle.length < 4 || !norm(text).includes(needle)) return null;
+    const t = text.trim();
     const changes = [];
-    rewriteObject(json, needle, changes);
-    if (!changes.length) return null;
-    post({ type: 'rewrote', url: String(url).slice(0, 200), changes });
-    return JSON.stringify(json);
+    if (t.startsWith('{') || t.startsWith('[')) {
+      let json;
+      try { json = JSON.parse(t); } catch (_) { return null; }
+      rewriteObject(json, needle, changes);
+      if (!changes.length) return null;
+      post({ type: 'rewrote', changes });
+      return JSON.stringify(json);
+    }
+    return null;
+  }
+
+  // Rewrites the body if it carries your prompt; returns the (possibly new) body.
+  function handleBody(transport, method, url, body) {
+    const kind = bodyKind(body);
+    const text = bodyText(body);
+    let next = null;
+    if (text !== null) {
+      next = maybeRewriteText(text);
+      if (next !== null && body instanceof URLSearchParams) next = null; // JSON only
+    }
+    logRequest(transport, method, url, kind, text, next !== null);
+    if (next === null) return body;
+    if (kind === 'binary') return new TextEncoder().encode(next);
+    return next;
   }
 
   // ---------- Video URL detection ----------
@@ -125,13 +195,17 @@
   const origFetch = window.fetch;
   window.fetch = async function (input, init) {
     try {
-      if (init && typeof init.body === 'string') {
-        const body = maybeRewriteBody(init.body, input && input.url ? input.url : input);
-        if (body !== null) init = { ...init, body };
-      } else if (input instanceof Request && !(init && 'body' in init) && pending && input.method !== 'GET') {
+      const url = input && input.url ? input.url : input;
+      const method = (init && init.method) || (input instanceof Request ? input.method : 'GET');
+      if (pending && init && 'body' in init && init.body != null) {
+        let body = init.body;
+        if (body instanceof Blob) body = await body.text();
+        const next = handleBody('fetch', method, url, body);
+        if (next !== body) init = { ...init, body: next };
+      } else if (pending && input instanceof Request && input.method !== 'GET' && !(init && 'body' in init)) {
         const text = await input.clone().text();
-        const body = maybeRewriteBody(text, input.url);
-        if (body !== null) input = new Request(input, { body });
+        const next = handleBody('fetch', method, url, text);
+        if (next !== text) input = new Request(input, { body: next });
       }
     } catch (_) { /* never break the page */ }
 
@@ -162,12 +236,12 @@
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
     this.__dolaUrl = url;
+    this.__dolaMethod = method;
     return origOpen.call(this, method, url, ...rest);
   };
   XMLHttpRequest.prototype.send = function (body) {
     try {
-      const next = maybeRewriteBody(body, this.__dolaUrl);
-      if (next !== null) body = next;
+      if (pending) body = handleBody('xhr', this.__dolaMethod || 'POST', this.__dolaUrl, body);
     } catch (_) { /* ignore */ }
     this.addEventListener('load', () => {
       try {
@@ -177,6 +251,25 @@
     });
     return origSend.call(this, body);
   };
+
+  // ---------- WebSocket (some chat apps send messages this way) ----------
+  if (window.WebSocket) {
+    const origWsSend = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (data) {
+      try {
+        if (pending) data = handleBody('websocket', 'SEND', this.url, data);
+      } catch (_) { /* ignore */ }
+      return origWsSend.call(this, data);
+    };
+    const OrigWS = window.WebSocket;
+    window.WebSocket = function (...args) {
+      const ws = new OrigWS(...args);
+      ws.addEventListener('message', (e) => { if (typeof e.data === 'string') report(e.data); });
+      return ws;
+    };
+    window.WebSocket.prototype = OrigWS.prototype;
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  }
 
   // ---------- EventSource ----------
   if (window.EventSource) {

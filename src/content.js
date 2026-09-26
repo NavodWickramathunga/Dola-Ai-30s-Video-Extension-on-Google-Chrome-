@@ -40,7 +40,12 @@
     const d = e.data;
     if (d.type === 'hook-ready') pushConfig();
     else if (d.type === 'video-url' && !hookedUrls.has(d.url)) hookedUrls.set(d.url, Date.now());
-    else if (d.type === 'rewrote') {
+    else if (d.type === 'net-log') {
+      chrome.storage.local.get('netLog').then(({ netLog = [] }) => {
+        netLog.push(d.entry);
+        chrome.storage.local.set({ netLog: netLog.slice(-25) });
+      });
+    } else if (d.type === 'rewrote') {
       LOG('made this prompt a single', settings.seconds, 's video:', d.changes);
       chrome.storage.local.set({ lastRewrite: { at: Date.now(), changes: d.changes } });
     }
@@ -58,7 +63,7 @@
     if (!text || !text.trim()) return;
     document.dispatchEvent(new CustomEvent('dola-video-pending', { detail: text }));
     armedUntil = Date.now() + settings.waitMinutes * 60 * 1000;
-    chrome.storage.local.set({ lastSent: { at: Date.now(), text: text.slice(0, 200) } });
+    chrome.storage.local.set({ lastSent: { at: Date.now(), text: text.slice(0, 200) }, netLog: [] });
   }
 
   document.addEventListener('input', (e) => {

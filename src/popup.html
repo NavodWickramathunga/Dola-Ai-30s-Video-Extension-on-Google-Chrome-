@@ -32,6 +32,13 @@
     <button id="downloadNow">Download latest video now</button>
   </div>
 
+  <details id="netBox">
+    <summary>What Dola sent (for troubleshooting)</summary>
+    <p class="muted small-line">Requests the page made right after your last prompt. Only addresses, sizes and field names are shown, never your text.</p>
+    <ol id="netLog"></ol>
+    <button id="copyNet" class="ghost">Copy details</button>
+  </details>
+
   <section id="historyBox" hidden>
     <h2>Downloaded videos</h2>
     <ol id="history"></ol>
