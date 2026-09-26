@@ -96,12 +96,18 @@
 
   // ---------- Finding the generated video ----------
   const DOWNLOADABLE_RE = /\.(mp4|webm|mov)(\?|#|$)/i;
+  // One key per actual video, so the same clip isn't counted twice when Dola shows it under
+  // several addresses (e.g. .../tos-alisg-v-64f990/<32-hex id>~tplv-obj.mp4 plus a ?signed copy).
   const keyOf = (url) => {
+    if (!url) return '';
+    if (url.startsWith('blob:')) return url;
+    const id = url.match(/\/([a-f0-9]{32})(?:[~.?#]|$)/i);
+    if (id) return 'id:' + id[1].toLowerCase();
     try {
       const u = new URL(url, location.href);
-      return u.protocol === 'blob:' ? url : u.origin + u.pathname;
+      return u.origin + u.pathname.replace(/~tplv-[^/]+$/i, '').replace(/\.(mp4|webm|mov)$/i, '');
     } catch (_) {
-      return url;
+      return url.split('?')[0];
     }
   };
 
