@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dola 30s Video</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="../icons/icon48.png" alt="" width="28" height="28">
+    <div>
+      <h1>Dola 30s Video</h1>
+      <p class="muted">Paste your prompt in Dola as usual. You get one 30s video in your Downloads folder.</p>
+    </div>
+  </header>
+
+  <div class="toggles">
+    <label class="toggle"><span>Final video length
+      <input class="inline-num" type="number" min="5" max="60" step="1" data-setting="seconds"> seconds</span></label>
+    <label class="toggle"><input type="checkbox" data-setting="appendInstruction"> <span>Add the length instruction to my message (you'll see it in the chat)</span></label>
+    <label class="toggle"><input type="checkbox" data-setting="autoDownload"> <span>Auto-download the finished video</span></label>
+    <label class="toggle"><input type="checkbox" data-setting="joinClips"> <span>Join Dola's clips into one video (Dola makes max 15s per clip)</span></label>
+  </div>
+
+  <section>
+    <div class="row"><strong>Status</strong><span id="tabStatus" class="muted"></span></div>
+    <p id="lastSent" class="muted small-line"></p>
+    <p id="lastRewrite" class="small-line"></p>
+    <p id="clipStatus" class="small-line"></p>
+  </section>
+
+  <div class="actions">
+    <button id="openDola" class="primary">Open Dola</button>
+    <button id="joinNow" hidden>Join clips now</button>
+    <button id="downloadNow">Download latest video now</button>
+  </div>
+
+  <p class="muted small-line safe">🛡️ Safe mode: this extension never changes Dola's code or requests. It only types, reads and downloads, like you would.</p>
+
+  <section id="historyBox" hidden>
+    <h2>Downloaded videos</h2>
+    <ol id="history"></ol>
+  </section>
+
+  <details>
+    <summary>Settings</summary>
+    <label>Instruction added to your prompt ({seconds} = length)
+      <textarea data-setting="instruction" rows="3"></textarea>
+    </label>
+    <div class="grid">
+      <label>Download folder
+        <input data-setting="downloadFolder" type="text">
+      </label>
+      <label>File name prefix
+        <input data-setting="filePrefix" type="text">
+      </label>
+      <label>Keep watching for (min)
+        <input data-setting="waitMinutes" type="number" min="1" max="120">
+      </label>
+      <label>Ignore videos shorter than (s)
+        <input data-setting="minVideoSeconds" type="number" min="0" max="30">
+      </label>
+    </div>
+    <label class="toggle"><input type="checkbox" data-setting="keepParts"> <span>Also save the separate clips</span></label>
+    <button id="reset" class="ghost">Reset settings</button>
+  </details>
+
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
